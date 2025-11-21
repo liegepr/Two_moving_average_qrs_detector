@@ -2,7 +2,7 @@ library(data.table)
 library(gsignal)
 
 # ============================= the main function ========================================================
-ma_detector1 <- function(signal, srate = 360L, lowcut_f1 = 8L, highcut_f2 = 21L, filter_order = 3L, qrs_win1 = 35, 
+ma_detector2 <- function(signal, srate = 360L, lowcut_f1 = 8L, highcut_f2 = 21L, filter_order = 3L, qrs_win1 = 35, 
     beat_win2 = 220, srate_ref = 360L, offset = 0.08, offset_win3 = 4L,
     slackness_red = FALSE, slackness_win1 = 0.200, slackness_win2 = 0.140,
     refractory_period = 0.3) {
@@ -30,28 +30,28 @@ ma_detector1 <- function(signal, srate = 360L, lowcut_f1 = 8L, highcut_f2 = 21L,
     nyquist_freq <- 0.5 * srate # Nyquist frequency
     low <- lowcut_f1 / nyquist_freq
     high <- highcut_f2 / nyquist_freq
+  
     # signal filtering
-    
-    bandpass <- gsignal::butter(n = filter_order, w = c(low, high), type = "pass")
+        bandpass <- gsignal::butter(n = filter_order, w = c(low, high), type = "pass")
     signal_filt <- gsignal::filtfilt(bandpass, c(rep(signal[1],
         srate), signal, rep(signal[length(signal)], srate)))
     signal_filt <- signal_filt[(srate + 1):(length(signal_filt) -
         srate)]
-    # signal squaring as in Elgendi 2013. Porr & Powell 2019 has been using abs()
+    # signal squaring as in Elgendi 2013. Porr & Powell 2019 have been using abs()
     signal_squared <- signal_filt^2
     
     # Rolling means
-    window1 <-  trunc(qrs_win1 * srate / srate_ref)
+    window1 <- trunc(qrs_win1 * srate / srate_ref)
         mwa_qrs <- frollmean(signal_squared, window1, align = "center") 
         # Center alignment as Elgendi 2013 (right alignment in Elgendi, Jonkman & DeBoer 2010 and Porr & Powell 2019)
 
-    window2 <-  trunc(beat_win2 * srate / srate_ref)
+    window2 <- trunc(beat_win2 * srate / srate_ref)
         mwa_beat <- frollmean(signal_squared, window2, align = "center")
 
-     window3 <-  trunc(offset_win3 * srate)
+     window3 <- trunc(offset_win3 * srate)
         mwa_noise <- frollmean(signal_squared, window3, align = "center")
     
-    # If we stop there with running means, the 1st and last beats won't be identified
+    # If we stop there with running means, the 1st and last beats might not be identified
     # Because window2 is much larger than a qrs, too many running mean values are missing
     # The function below will substitute NA values with left-aligned and right-aligned  
     # running means at the left and right margins of the vector of means respectively.
@@ -102,15 +102,29 @@ ma_detector1 <- function(signal, srate = 360L, lowcut_f1 = 8L, highcut_f2 = 21L,
     # optional slackness reduction
     if (slackness_red) {
       srfun <- function(x, sig, t1, t2) {
-        b1 <- trunc(t1 / 2)  # we want t1/2 if t1 even, or its lower even integer if not
-        b2 <- trunc(t2 / 2)
-        T1 <- c(-b1, 0, b1)
-        T2 <- (-b2):b2
-        aR <- median(sig[x + T1], na.rm = TRUE)
+        b1 <- as.integer(trunc(t1 / 2))  # we want t1/2 if t1 is an even integer, or its lower even integer if not
+        b2 <- as.integer(trunc(t2 / 2))
+        # the algorithm found Gradl & Elgendi 2015 is rather simple. However, the calculation will fail
+        # at the 1st and last peaks if either the T1 or T2 window is not fully included 
+        # in the sampling time interval
+        # For T2, as straightforward solution was found
+        # Our solution for T1 is more questionable, although it looks successful in most cases.
+        T1 <- if ((x - b1) < 0) {
+          c(1L, x + c(0L, b1))
+        }
+        else if ((x + b1) > length(sig)) {
+          c(x + c(-b1, 0L), length(sig))
+        }
+        else {
+          x + c(-b1, 0L, b1)
+        }
+        aR <- median(sig[T1], na.rm = TRUE)
+        T2 <- x + (-b2):b2
+        T2 <- T2[T2 >= 1L & T2 <= length(sig)] # discard T2 values outside from the range of samples
         # Gradl & Elgendi 2015 are using which.max(abs()), but this sometimes locate the S peak instead of the R one
         # Thus, we prefer using which.max()
-        # tU <- x - (b2 + 1) + which.max(abs(signal[x + T2] - aR))
-        tU <- x - (b2 + 1) + which.max(signal[x + T2] - aR)
+        # yet to be checked: does omitting abs() work for all ECG leads?
+        tU <- min(T2) + which.max(sig[T2] - aR) - 1L
         tU
       }
       swin1 <- slackness_win1 * srate
@@ -122,37 +136,32 @@ ma_detector1 <- function(signal, srate = 360L, lowcut_f1 = 8L, highcut_f2 = 21L,
       # merging the corrected locations into the results table
       blockt <- loc2[blockt, on = c(idx = "idx")]
     }
-    # time scale translation (if one needs to compare the results with matlab or C programs)
+    # time scale translation (if one needs to compare the results with those obtained using Matlab or C programs)
     # indexing starts from 1L in R, but from 0L in some other programs
     blockt[, idx:= idx - 1][, loc:= loc - 1]
     if ("loc_sr" %in% colnames(blockt)) {blockt[, loc_sr:= loc_sr - 1]}
     blockt[, time_stamp := idx / srate] 
     return(blockt)
-   }
+}
 # -----------------------------------------------------------------------------------------------------
 ad100 <- fread("C:\\Users\\Philippe\\Documents\\Vélo\\Training\\Stats\\100.csv", sep = ",")
                       
 # ==================== static diagnostic plots ==========================================================
-ad100_qrs1 <- ma_detector1(signal = ad100[, MLII], srate = 360L, lowcut_f1 = 8L, highcut_f2 = 21L, filter_order = 3L, 
+ad100_qrs2 <- ma_detector2(signal = ad100[, MLII], srate = 360L, lowcut_f1 = 8L, highcut_f2 = 21L, filter_order = 3L, 
      qrs_win1 = 35L, beat_win2 = 220L, srate_ref = 360L, offset = 0.08, offset_win3 = 10L,
   slackness_red = TRUE, slackness_win1 = 0.2, slackness_win2 = 0.14, refractory_period = 0.3)
 
-ma_detector1(signal = ad100[, MLII], srate = 360L, lowcut_f1 = 8L, highcut_f2 = 21L, filter_order = 3L, 
-             qrs_win1 = 35L, beat_win2 = 220L, srate_ref = 360L, offset = 0.08, offset_win3 = 10L,
-             slackness_red = FALSE, slackness_win1 = 0.2, slackness_win2 = 0.14, refractory_period = 0.3)
-
-
-ad100_qrs10 <- ad100_qrs1[648600:650000]
-ad100_qrs10[!is.na(block.clean), block.clean := 1]
-ad100_qrs10[is.na(block.clean), block.clean := 0]
+ad100_qrs20 <- ad100_qrs2[648600:650000]
+ad100_qrs20[!is.na(block.clean), block.clean := 1]
+ad100_qrs20[is.na(block.clean), block.clean := 0]
 
 # plot the squared signal along with windows, blocks and estimated locations
-plot(signal_squared ~ idx, data = ad100_qrs10, type = "l", xlab = "sample (360 Hz)")
-lines(mwa_qrs ~ idx, data = ad100_qrs10, type = "l", col = 2) 
-lines(mwa_beat ~ idx, data = ad100_qrs10, type = "l", col = 3) 
-lines(I(0.2 * block.clean) ~ idx, data = ad100_qrs10, type = "l", col = 5) 
-points(signal_squared ~ loc, data = ad100_qrs10, col = "darkred")
-points(signal_squared ~ loc_sr, data = ad100_qrs10, col = "#036830", pch = 3)
+plot(signal_squared ~ idx, data = ad100_qrs20, type = "l", xlab = "sample (360 Hz)")
+lines(mwa_qrs ~ idx, data = ad100_qrs20, type = "l", col = 2) 
+lines(mwa_beat ~ idx, data = ad100_qrs20, type = "l", col = 3) 
+lines(I(0.2 * block.clean) ~ idx, data = ad100_qrs20, type = "l", col = 5) 
+points(signal_squared ~ loc, data = ad100_qrs20, col = "darkred")
+points(signal_squared ~ loc_sr, data = ad100_qrs20, col = "#036830", pch = 3)
 legend(x = "topleft",          # Position
        title = "Slackness reduction",
        legend = c("No", "Yes", "W1", "W2", "Block"),  # Legend texts
@@ -161,12 +170,12 @@ legend(x = "topleft",          # Position
        lty = c(0, 0, 1, 1, 1))                 # Line width
 
 # same as above, using time as x-axis
-plot(signal_squared ~ time_stamp, data = ad100_qrs10, type = "l", xlab = "time (s)")
-lines(mwa_qrs ~ time_stamp, data = ad100_qrs10, type = "l", col = 2) 
-lines(mwa_beat ~ time_stamp, data = ad100_qrs10, type = "l", col = 3) 
-lines(I(0.2 * block.clean) ~ time_stamp, data = ad100_qrs10, type = "l", col = 5) 
-points(signal_squared ~ I(loc / 360), data = ad100_qrs10, col = "darkred")
-points(signal_squared ~ I(loc / 360), data = ad100_qrs10, col = "#036830", pch = 3)
+plot(signal_squared ~ time_stamp, data = ad100_qrs20, type = "l", xlab = "time (s)")
+lines(mwa_qrs ~ time_stamp, data = ad100_qrs20, type = "l", col = 2) 
+lines(mwa_beat ~ time_stamp, data = ad100_qrs20, type = "l", col = 3) 
+lines(I(0.2 * block.clean) ~ time_stamp, data = ad100_qrs20, type = "l", col = 5) 
+points(signal_squared ~ I(loc / 360), data = ad100_qrs20, col = "darkred")
+points(signal_squared ~ I(loc / 360), data = ad100_qrs20, col = "#036830", pch = 3)
 legend(x = "topleft",          # Position
        title = "Slackness reduction",
        legend = c("No", "Yes", "W1", "W2", "Block"),  # Legend texts
@@ -178,10 +187,10 @@ legend(x = "topleft",          # Position
 # ad100_qrs20 <- ad100_qrs2[649730:649745]
 # plot the unfiltered signal and check location accuracy
 # ad100_qrs2[, loc_sr:=c(NA, loc_sr[1:649999])]
-ad100_qrs11 <- ad100_qrs1[649500:650000]
-plot(signal ~ idx, data = ad100_qrs11, type = "l", xlab = "sample (360 Hz)")
-  points(signal ~ loc, data = ad100_qrs11, col = "darkred")
-  points(signal ~ loc_sr, data = ad100_qrs11, col = "#036830", pch = 3)
+ad100_qrs21 <- ad100_qrs2[649500:650000]
+plot(signal ~ idx, data = ad100_qrs21, type = "l", xlab = "sample (360 Hz)")
+  points(signal ~ loc, data = ad100_qrs21, col = "darkred")
+  points(signal ~ loc_sr, data = ad100_qrs21, col = "#036830", pch = 3)
   legend(x = "topleft",          # Position
        title = "Slackness reduction",
        legend = c("No", "Yes"),  # Legend texts
@@ -193,11 +202,11 @@ plot(signal ~ idx, data = ad100_qrs11, type = "l", xlab = "sample (360 Hz)")
 
 # ==================== dynamic diagnostic plot =========================================================
 library(plotly)
-plot_ly(ad100_qrs1, x = ~ idx, y = ~signal, type = "scatter", linetype = 1, mode = "lines", showlegend = FALSE) |> 
+plot_ly(ad100_qrs20, x = ~ idx, y = ~signal, type = "scatter", linetype = 1, mode = "lines", showlegend = FALSE) %>% 
 layout(xaxis = list(title = "sample (360 Hz)"),
 yaxis = list(title = "unfiltered signal (mV)"),
-legend = list(orientation = 'h')) |>
-add_markers(x = ~loc[!is.na(loc)], y = ~signal[!is.na(loc)], inherit = FALSE, name = "approximate location") |> 
+legend = list(orientation = 'h')) %>%
+add_markers(x = ~loc[!is.na(loc)], y = ~signal[!is.na(loc)], inherit = FALSE, name = "approximate location") %>% 
 add_markers(x = ~loc_sr[!is.na(loc_sr)], y = ~signal[!is.na(loc_sr)], inherit = FALSE,
 name = "corrected location")
 # --------------------------------------------------------------------------------------------------------
