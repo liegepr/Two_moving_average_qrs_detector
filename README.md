@@ -8,6 +8,12 @@
   * Elgendi, Mohamed; Talkachova, Alena (2013): Fast QRS Detection with an Optimized Knowledge-Based Method. Evaluation on 11 Standard ECG Databases. In PLoS ONE 8 (9), e73557. DOI: 10.1371/journal.pone.0073557.
   * Gradl, Stefan; Leutheuser, Heike; Elgendi, Mohamed; Lang, Nadine; Eskofier, Bjoern M. (2015): Temporal correction of detected R-peaks in ECG signals. A crucial step to improve QRS detection algorithms. In Annual International Conference of the IEEE Engineering in Medicine and Biology Society. IEEE Engineering in Medicine and Biology Society. Annual International Conference 2015, pp. 522–525. DOI: 10.1109/embc.2015.7318414.
   * Porr, Bernd; Howell, Luis (2019): R-peak detector stress test with a new noisy ECG database reveals significant performance differences amongst popular detectors: Cold Spring Harbor Laboratory.
+  * Elgendi, Mohamed (2016): TERMA Framework for Biomedical Signal Analysis. An Economic-Inspired Approach. In Biosensors 6 (4). DOI: 10.3390/bios6040055.
+  * Elgendi, Mohamed; Mohamed, Amr; Ward, Rabab (2017): Efficient ECG Compression and QRS Detection for E-Health Applications. In Sci Rep 7 (1), p. 459. DOI: 10.1038/s41598-017-00540-x.
+  * Kristof, Florian; Kapsecker, Maximilian; Nissen, Leon; Brimicombe, James; Cowie, Martin R.; Ding, Zixuan et al. (2024): QRS detection in single-lead, telehealth electrocardiogram signals. Benchmarking open-source algorithms. In PLOS Digit Health 3 (8), e0000538. DOI: 10.1371/journal.pdig.0000538.
+  * Porr, Bernd; Howell, Luis (2019): R-peak detector stress test with a new noisy ECG database reveals significant performance differences amongst popular detectors: Cold Spring Harbor Laboratory.
+  * Porr, Bernd; Macfarlane, Peter W.; Naseer, Noman (2024): A new QRS detector stress test combining temporal jitter and F-score (JF) reveals significant performance differences amongst popular detectors. In PLoS ONE 19 (11), e0309739. DOI:      10.1371/journal.pone.0309739.
+   * Reklewski, Wojciech; Miśkowicz, Marek; Augustyniak, Piotr (2024): QRS Detector Performance Evaluation Aware of Temporal Accuracy and Presence of Noise. In Sensors 24 (5), p. 1698. DOI: 10.3390/s24051698.
 
 # Implementation details
 
@@ -15,7 +21,7 @@
 * One additional column (loc_sr) is reported if the user needs slackness reduction.
 * The modified version (qrs_detector_2ma_mod.r) attempts to detect the very first and very last beats which are missed by design in the original version. The implementation of slackness reduction for these marginal peaks was found effective in most cases but though I am not saying it is 100% safe. 
 * Two dependencies only: packages gsignal (butter() & filtfilt()) and data.table (fread(), data.table(), fifelse(), rleid(), frollingmeans() & foverlaps() + faster computation times) are required.
-* No for-loops are being used.
+* No IF-THEN-ELSE, FOR or WHILE are being used.
 
 # Validation against the Glasgow University Database (GUDB)
 
@@ -45,7 +51,7 @@
   * Using a 40 ms tolerance window
 
 > According to Porr & Howell, the default tolerance is a tenth of the sampling rate as may be read in the Physionet comparison algorithms. 
-For a 250 Hz sampling rate, a tolerance of 40 ms corresponds to (40e-3) * 250 = 10 samples.
+For a 250 Hz sampling rate, a tolerance of **40 ms** corresponds to (40e-3) * 250 = 10 samples. Porr & Howell also state that the widely used tolerance of **100 ms** which overestimates the performance of an algorithm should not be used. 
 The detection is said to be right shifted (Porr & Howell 2019) but our sample plots show some cases of left-shifted detection. So, we used a tolerance interval which is symmetrical around the reference annotation.
 The WFBD application guide (WAG.pdf) says that the match window specifies the maximum absolute difference in annotation times that is permitted for matching annotations. Its default value used by the bxb function is 0.15 seconds which is way too large.
 
