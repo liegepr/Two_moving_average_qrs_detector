@@ -134,7 +134,7 @@ The WFBD application guide (WAG.pdf) says that the match window specifies the ma
 |  walking  | cheststrap | 0.9933 | 0.9715 |
 
 # Benchmarking
-   * Time (ms) for processing 123 ECG recordings.
+   * Time (ms) needed for processing 123 ECG recordings.
     > library(rbenchmark)
     > benchmark(
     >     dtbr <- apply(sample_list, 1, valid_fn, freq_sampling = 250L,  slred = TRUE)
